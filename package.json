@@ -1,0 +1,24 @@
+{
+  "name": "micro-markdown",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "cache": "node cache.js",
+    "start": "index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "watch": "nodemon -w index.js"
+  },
+  "keywords": ["markdown", "microservice"],
+  "author": "Zach Green",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "marked": "^0.3.6",
+    "micro": "^9.0.0",
+    "query-string": "^5.0.0",
+    "redis": "^2.8.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.12.1"
+  }
+}
