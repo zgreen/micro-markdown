@@ -4,11 +4,16 @@ const { promisify } = require("util");
 const { parse } = require("query-string");
 const marked = require("marked");
 const micro = require("micro");
+const redis = require("redis");
 
+const cache = redis.createClient();
 const { send } = micro;
 const lexer = new marked.Lexer();
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
+const asyncCacheGet = promisify(cache.get).bind(cache);
+const asyncCacheSet = promisify(cache.set).bind(cache);
+const asyncCacheSmembers = promisify(cache.smembers).bind(cache);
 
 const textsDir = "./texts";
 const namespace = `/api/v1`;
@@ -56,8 +61,18 @@ function template(
 </html>`;
 }
 
+async function attemptCacheGet(filepath, fallback) {
+  let text = await asyncCacheGet(filepath);
+  if (!text) {
+    console.log("read file from disk");
+    text = await fallback(filepath);
+    asyncCacheSet(filepath, text);
+  }
+  return text;
+}
+
 async function ok(filepath, path, res) {
-  const text = await readFile(filepath);
+  const text = await attemptCacheGet(filepath, readFile);
   switch (true) {
     case path.indexOf(routes.raw) === 0:
       return text;
@@ -92,13 +107,25 @@ async function readTexts() {
   }
 }
 
+async function attemptCacheReadTexts() {
+  let texts = await asyncCacheSmembers("paths");
+  if (!texts || texts.length === 0) {
+    console.log("read dir from disk");
+    texts = await readTexts();
+    texts.forEach(path => {
+      cache.sadd("paths", path);
+    });
+  }
+  return texts;
+}
+
 const server = micro(async (req, res) => {
   const [path, search] = req.url.split("?");
   const [, endpoint] = path.split(routesRegExp());
   if (!endpoint) {
     return notFound(res);
   }
-  const texts = await readTexts();
+  const texts = await attemptCacheReadTexts();
   const match = texts.indexOf(`${endpoint.substr(1)}.md`);
   if (match === -1) {
     return notFound(res);

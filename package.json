@@ -9,7 +9,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "watch": "nodemon -w index.js"
   },
-  "keywords": ["markdown", "microservice"],
+  "keywords": [
+    "markdown",
+    "microservice"
+  ],
   "author": "Zach Green",
   "license": "GPL-3.0",
   "dependencies": {
