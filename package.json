@@ -9,10 +9,15 @@
     "test": "jest --forceExit",
     "watch": "nodemon -w server.js -w index.js server.js"
   },
-  "keywords": ["markdown", "microservice", "redis"],
+  "keywords": [
+    "markdown",
+    "microservice",
+    "redis"
+  ],
   "author": "Zach Green",
   "license": "GPL-3.0",
   "dependencies": {
+    "front-matter": "^2.2.0",
     "marked": "^0.3.6",
     "micro": "^9.0.0",
     "query-string": "^5.0.0",

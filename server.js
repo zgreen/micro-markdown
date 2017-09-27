@@ -9,6 +9,9 @@ server({
     }
   },
   routes: {
+    "no-promise": {
+      handler: () => 1 + 1
+    },
     home: {
       handler: () => {
         return new Promise((resolve, reject) => {

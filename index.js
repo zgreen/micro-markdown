@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { promisify } = require("util");
 
+const frontMatter = require("front-matter");
 const { parse } = require("query-string");
 const marked = require("marked");
 const micro = require("micro");
@@ -8,7 +9,6 @@ const redis = require("redis");
 
 const cache = redis.createClient();
 const { send } = micro;
-const lexer = new marked.Lexer();
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
 const asyncCacheGet = promisify(cache.get).bind(cache);
@@ -34,10 +34,10 @@ function notFound(res) {
   );
 }
 
-function parseTitle(text) {
-  return lexer
-    .lex(text)
-    .find(token => token.type === "heading" && token.depth === 1).text;
+function parseText(text) {
+  const { attributes, body } = frontMatter(text);
+  const { description, title } = attributes;
+  return { body, description, title };
 }
 
 /**
@@ -93,13 +93,18 @@ async function ok(options) {
   switch (true) {
     case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
       return text;
-    case target === "json" || path.indexOf(apiRoutes.json) === 0:
+    case target === "json" || path.indexOf(apiRoutes.json) === 0: {
+      const { body, description, title } = parseText(text);
       return {
-        body: text,
-        title: parseTitle(text)
+        body,
+        description,
+        title
       };
-    case target === "html" || path.indexOf(apiRoutes.html) === 0:
-      return template(marked(text));
+    }
+    case target === "html" || path.indexOf(apiRoutes.html) === 0: {
+      const { body, description, title } = parseText(text);
+      return template(marked(body), title);
+    }
     default:
       return notFound(res);
   }
@@ -137,6 +142,24 @@ async function attemptCacheReadFiles() {
   return texts;
 }
 
+async function customHandler(handler, res, path, target) {
+  try {
+    string = await handler();
+    if (typeof string !== "string") {
+      console.error("string is not a string.");
+      return notFound(res);
+    }
+  } catch (err) {
+    return notFound(res);
+  }
+  return ok({
+    res,
+    path,
+    string,
+    target
+  });
+}
+
 const server = (options = { routes: {} }) => {
   const { namespace, routes, templateFunction, routeMaps } = options;
   return micro(async (req, res) => {
@@ -161,17 +184,7 @@ const server = (options = { routes: {} }) => {
         return ok({ res, path, string, target });
       }
       if (handler) {
-        try {
-          string = await handler();
-        } catch (err) {
-          return notFound(res);
-        }
-        return ok({
-          res,
-          path,
-          string,
-          target
-        });
+        return await customHandler(handler, res, path, target);
       }
     } else {
       // Else read the texts.
