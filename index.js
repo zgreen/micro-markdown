@@ -24,7 +24,14 @@ const apiRoutes = {
 };
 
 function notFound(res) {
-  return send(res, 404, "Not found");
+  return send(
+    res,
+    404,
+    templateFunction(
+      `<h1>Sorry, that page wasn't found.</h1>`,
+      "Page Not Found"
+    )
+  );
 }
 
 function parseTitle(text) {
@@ -33,9 +40,13 @@ function parseTitle(text) {
     .find(token => token.type === "heading" && token.depth === 1).text;
 }
 
-function routesRegExp() {
+/**
+ * Match routes against a RegEx.
+ */
+function routesRegExp(routeMap) {
   return new RegExp(
     Object.keys(apiRoutes)
+      .concat(routeMap || [])
       .map(keys => apiRoutes[keys])
       .join("|")
   );
@@ -62,6 +73,10 @@ function templateFunction(
 }
 
 async function attemptTextCacheGet(filepath, fallback) {
+  if (!filepath) {
+    console.log("bail in attemptCacheGet");
+    return;
+  }
   let text = await asyncCacheGet(filepath);
   if (!text) {
     console.log("read file from disk");
@@ -73,17 +88,17 @@ async function attemptTextCacheGet(filepath, fallback) {
 
 async function ok(options) {
   const args = Object.assign({}, options, { template: templateFunction });
-  const { filepath, path, res, template, string } = args;
+  const { filepath, path, res, template, string, target } = args;
   const text = string || (await attemptTextCacheGet(filepath, readFile));
   switch (true) {
-    case path.indexOf(apiRoutes.raw) === 0:
+    case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
       return text;
-    case path.indexOf(apiRoutes.json) === 0:
+    case target === "json" || path.indexOf(apiRoutes.json) === 0:
       return {
         body: text,
         title: parseTitle(text)
       };
-    case path.indexOf(apiRoutes.html) === 0:
+    case target === "html" || path.indexOf(apiRoutes.html) === 0:
       return template(marked(text));
     default:
       return notFound(res);
@@ -123,23 +138,40 @@ async function attemptCacheReadFiles() {
 }
 
 const server = (options = { routes: {} }) => {
-  const { namespace, routes, templateFunction } = options;
+  const { namespace, routes, templateFunction, routeMaps } = options;
   return micro(async (req, res) => {
     const [path, search] = req.url.split("?");
-    const [, endpoint] = path.split(routesRegExp());
+    const mappedRoute = routeMaps.default(path).route;
+    const { target } = routeMaps.default(path);
+    let endpoint = routeMaps.default(path).route;
+    if (!endpoint) {
+      [, endpoint] = path.split(routesRegExp(mappedRoute));
+    }
     // Bail if this isn't a desired endpoint
     if (!endpoint) {
+      console.log("bail");
       return notFound(res);
     }
     // Check if the path matches a route from the config
     if (routes[endpoint.substr(1)]) {
       const keys = Object.keys(routes);
-      const { string, handler } = routes[endpoint.substr(1)];
+      const { handler } = routes[endpoint.substr(1)];
+      let { string } = routes[endpoint.substr(1)];
       if (string) {
-        return ok({ res, path, string });
+        return ok({ res, path, string, target });
       }
       if (handler) {
-        return ok({ res, path, string: await handler() });
+        try {
+          string = await handler();
+        } catch (err) {
+          return notFound(res);
+        }
+        return ok({
+          res,
+          path,
+          string,
+          target
+        });
       }
     } else {
       // Else read the texts.
@@ -151,7 +183,8 @@ const server = (options = { routes: {} }) => {
       return ok({
         filepath: `${textsDir}/${texts[match]}`,
         path,
-        res
+        res,
+        target
       });
     }
   });

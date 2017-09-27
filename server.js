@@ -2,20 +2,23 @@ const axios = require("axios");
 const server = require("./index");
 server({
   routeMaps: {
-    default: (route, endpoint) => `/${endpoint}`
+    default: route => {
+      return route.indexOf("/mm") === 0
+        ? {}
+        : { route: `${route}`, target: "html" };
+    }
   },
   routes: {
     home: {
       handler: () => {
-        console.log("in the handler");
-        return new Promise(resolve => {
+        return new Promise((resolve, reject) => {
           const p1 = axios.get(
             "http://localhost:3000/mm/api/v1/json/more-please"
           );
           const p2 = axios.get("http://localhost:3000/mm/api/v1/json/test");
-          Promise.all([p1, p2]).then(result => {
-            console.log(result[1].data.body);
-            resolve(`<h1>This is a blog.</h1>
+          Promise.all([p1, p2]).then(
+            result => {
+              resolve(`<h1>This is a blog.</h1>
 
 <h2>These are some posts</h2>
 <ul>
@@ -28,7 +31,11 @@ server({
 </ul>
 ${result[0].data.body}
 ${result[1].data.body}`);
-          });
+            },
+            reason => {
+              reject(reason);
+            }
+          );
         });
       }
     },
