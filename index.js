@@ -16,11 +16,11 @@ const asyncCacheSet = promisify(cache.set).bind(cache);
 const asyncCacheSmembers = promisify(cache.smembers).bind(cache);
 
 const textsDir = "./texts";
-const namespace = `/api/v1`;
-const routes = {
-  raw: `${namespace}/raw`,
-  json: `${namespace}/json`,
-  html: `${namespace}/html`
+const defaultNamespace = `/mm/api/v1`;
+const apiRoutes = {
+  raw: `${defaultNamespace}/raw`,
+  json: `${defaultNamespace}/json`,
+  html: `${defaultNamespace}/html`
 };
 
 function notFound(res) {
@@ -35,13 +35,13 @@ function parseTitle(text) {
 
 function routesRegExp() {
   return new RegExp(
-    Object.keys(routes)
-      .map(keys => routes[keys])
+    Object.keys(apiRoutes)
+      .map(keys => apiRoutes[keys])
       .join("|")
   );
 }
 
-function template(
+function templateFunction(
   body,
   title = "Document",
   styles = `body{font-family: monospace}`
@@ -61,7 +61,7 @@ function template(
 </html>`;
 }
 
-async function attemptCacheGet(filepath, fallback) {
+async function attemptTextCacheGet(filepath, fallback) {
   let text = await asyncCacheGet(filepath);
   if (!text) {
     console.log("read file from disk");
@@ -71,17 +71,19 @@ async function attemptCacheGet(filepath, fallback) {
   return text;
 }
 
-async function ok(filepath, path, res) {
-  const text = await attemptCacheGet(filepath, readFile);
+async function ok(options) {
+  const args = Object.assign({}, options, { template: templateFunction });
+  const { filepath, path, res, template, string } = args;
+  const text = string || (await attemptTextCacheGet(filepath, readFile));
   switch (true) {
-    case path.indexOf(routes.raw) === 0:
+    case path.indexOf(apiRoutes.raw) === 0:
       return text;
-    case path.indexOf(routes.json) === 0:
+    case path.indexOf(apiRoutes.json) === 0:
       return {
         body: text,
         title: parseTitle(text)
       };
-    case path.indexOf(routes.html) === 0:
+    case path.indexOf(apiRoutes.html) === 0:
       return template(marked(text));
     default:
       return notFound(res);
@@ -97,7 +99,7 @@ async function readFile(path) {
   }
 }
 
-async function readTexts() {
+async function readFiles() {
   try {
     const files = await asyncReadDir(textsDir, "utf8");
     return files.filter(filename => filename.substr(-3) === ".md");
@@ -107,28 +109,52 @@ async function readTexts() {
   }
 }
 
-async function attemptCacheReadTexts() {
-  let texts = await asyncCacheSmembers("paths");
+async function attemptCacheReadFiles() {
+  const key = "text-paths";
+  let texts = await asyncCacheSmembers(key);
   if (!texts || texts.length === 0) {
     console.log("read dir from disk");
-    texts = await readTexts();
+    texts = await readFiles();
     texts.forEach(path => {
-      cache.sadd("paths", path);
+      cache.sadd(key, path);
     });
   }
   return texts;
 }
 
-const server = micro(async (req, res) => {
-  const [path, search] = req.url.split("?");
-  const [, endpoint] = path.split(routesRegExp());
-  if (!endpoint) {
-    return notFound(res);
-  }
-  const texts = await attemptCacheReadTexts();
-  const match = texts.indexOf(`${endpoint.substr(1)}.md`);
-  if (match === -1) {
-    return notFound(res);
-  }
-  return ok(`${textsDir}/${texts[match]}`, path, res);
-}).listen(3000);
+const server = (options = { routes: {} }) => {
+  const { namespace, routes, templateFunction } = options;
+  return micro(async (req, res) => {
+    const [path, search] = req.url.split("?");
+    const [, endpoint] = path.split(routesRegExp());
+    // Bail if this isn't a desired endpoint
+    if (!endpoint) {
+      return notFound(res);
+    }
+    // Check if the path matches a route from the config
+    if (routes[endpoint.substr(1)]) {
+      const keys = Object.keys(routes);
+      const { string, handler } = routes[endpoint.substr(1)];
+      if (string) {
+        return ok({ res, path, string });
+      }
+      if (handler) {
+        return ok({ res, path, string: await handler() });
+      }
+    } else {
+      // Else read the texts.
+      let texts = await attemptCacheReadFiles();
+      const match = texts.indexOf(`${endpoint.substr(1)}.md`);
+      if (match === -1) {
+        return notFound(res);
+      }
+      return ok({
+        filepath: `${textsDir}/${texts[match]}`,
+        path,
+        res
+      });
+    }
+  });
+};
+
+module.exports = server;

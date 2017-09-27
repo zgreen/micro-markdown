@@ -5,14 +5,11 @@
   "main": "index.js",
   "scripts": {
     "cache": "node cache.js",
-    "start": "index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "watch": "nodemon -w index.js"
+    "start": "node server.js",
+    "test": "jest --forceExit",
+    "watch": "nodemon -w server.js -w index.js server.js"
   },
-  "keywords": [
-    "markdown",
-    "microservice"
-  ],
+  "keywords": ["markdown", "microservice", "redis"],
   "author": "Zach Green",
   "license": "GPL-3.0",
   "dependencies": {
@@ -22,6 +19,8 @@
     "redis": "^2.8.0"
   },
   "devDependencies": {
+    "axios": "^0.16.2",
+    "jest": "^21.1.0",
     "nodemon": "^1.12.1"
   }
 }
