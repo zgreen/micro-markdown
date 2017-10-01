@@ -10,7 +10,6 @@ const { send } = micro;
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
 
-const textsDir = "./texts";
 const defaultNamespace = `/mm/api/v1`;
 const apiRoutes = {
   raw: `${defaultNamespace}/raw`,
@@ -190,7 +189,7 @@ async function readFile(path) {
   }
 }
 
-async function readFiles() {
+async function readFiles(textsDir) {
   try {
     const files = await asyncReadDir(textsDir, "utf8");
     return files.filter(filename => filename.substr(-3) === ".md");
@@ -200,12 +199,12 @@ async function readFiles() {
   }
 }
 
-async function attemptCacheReadFiles(cache) {
+async function attemptCacheReadFiles(cache, textsDir) {
   const key = "text-paths";
   let texts = await cache.array.get(key);
   if (!texts || texts.length === 0) {
     console.log("read dir from disk");
-    texts = await readFiles();
+    texts = await readFiles(textsDir);
     texts.forEach(path => {
       cache.array.add(key, path);
     });
@@ -233,8 +232,19 @@ async function customHandler(handler, res, path, target, cache) {
 }
 
 const server = (options = { routes: {} }) => {
-  const args = Object.assign({}, { cacheClient: establishCache }, options);
-  const { namespace, routes, templateFunction, routeMaps, cacheClient } = args;
+  const args = Object.assign(
+    {},
+    { cacheClient: establishCache, textsDir: "./texts" },
+    options
+  );
+  const {
+    namespace,
+    routes,
+    templateFunction,
+    routeMaps,
+    cacheClient,
+    textsDir
+  } = args;
   return micro(async (req, res) => {
     const cache = await cacheClient();
     const [path, search] = req.url.split("?");
@@ -263,7 +273,7 @@ const server = (options = { routes: {} }) => {
       }
     } else {
       // Else read the texts.
-      let texts = await attemptCacheReadFiles(cache);
+      let texts = await attemptCacheReadFiles(cache, textsDir);
       const match = texts.indexOf(`${endpoint.substr(1)}.md`);
       if (match === -1) {
         return notFound(res);
