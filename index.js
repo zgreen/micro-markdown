@@ -10,12 +10,6 @@ const { send } = micro;
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
 
-const defaultNamespace = `/mm/api/v1`;
-const apiRoutes = {
-  raw: `${defaultNamespace}/raw`,
-  json: `${defaultNamespace}/json`,
-  html: `${defaultNamespace}/html`
-};
 let currentCache;
 
 async function establishCache(client) {
@@ -113,7 +107,7 @@ function parseText(text) {
 /**
  * Match routes against a RegEx.
  */
-function routesRegExp(routeMap) {
+function routesRegExp(routeMap, apiRoutes) {
   return new RegExp(
     Object.keys(apiRoutes)
       .concat(routeMap || [])
@@ -158,7 +152,16 @@ async function attemptTextCacheGet(cache, filepath, fallback) {
 
 async function ok(options) {
   const args = Object.assign({}, options, { template: templateFunction });
-  const { filepath, path, res, template, string, target, cache } = args;
+  const {
+    apiRoutes,
+    filepath,
+    path,
+    res,
+    template,
+    string,
+    target,
+    cache
+  } = args;
   const text = string || (await attemptTextCacheGet(cache, filepath, readFile));
   switch (true) {
     case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
@@ -212,7 +215,7 @@ async function attemptCacheReadFiles(cache, textsDir) {
   return texts;
 }
 
-async function customHandler(handler, res, path, target, cache) {
+async function customHandler(handler, res, path, target, cache, apiRoutes) {
   try {
     string = await handler();
     if (typeof string !== "string") {
@@ -223,6 +226,7 @@ async function customHandler(handler, res, path, target, cache) {
     return notFound(res);
   }
   return ok({
+    apiRoutes,
     res,
     path,
     string,
@@ -232,12 +236,22 @@ async function customHandler(handler, res, path, target, cache) {
 }
 
 const server = (options = { routes: {} }) => {
+  const defaultNamespace = `/mm/api/v1`;
   const args = Object.assign(
     {},
-    { cacheClient: establishCache, textsDir: "./texts" },
+    {
+      apiRoutes: {
+        raw: `${defaultNamespace}/raw`,
+        json: `${defaultNamespace}/json`,
+        html: `${defaultNamespace}/html`
+      },
+      cacheClient: establishCache,
+      textsDir: "./texts"
+    },
     options
   );
   const {
+    apiRoutes,
     namespace,
     routes,
     templateFunction,
@@ -252,7 +266,7 @@ const server = (options = { routes: {} }) => {
     const { target } = routeMaps.default(path);
     let endpoint = routeMaps.default(path).route;
     if (!endpoint) {
-      [, endpoint] = path.split(routesRegExp(mappedRoute));
+      [, endpoint] = path.split(routesRegExp(mappedRoute, apiRoutes));
     }
     // Bail if this isn't a desired endpoint
     if (!endpoint) {
@@ -265,11 +279,18 @@ const server = (options = { routes: {} }) => {
       const { handler } = routes[endpoint.substr(1)];
       let { string } = routes[endpoint.substr(1)];
       if (string) {
-        return ok({ res, path, string, target, cache });
+        return ok({ apiRoutes, res, path, string, target, cache });
       }
       if (handler) {
         console.log("yes handler");
-        return await customHandler(handler, res, path, target, cache);
+        return await customHandler(
+          handler,
+          res,
+          path,
+          target,
+          cache,
+          apiRoutes
+        );
       }
     } else {
       // Else read the texts.
@@ -279,6 +300,7 @@ const server = (options = { routes: {} }) => {
         return notFound(res);
       }
       return ok({
+        apiRoutes,
         filepath: `${textsDir}/${texts[match]}`,
         path,
         res,
