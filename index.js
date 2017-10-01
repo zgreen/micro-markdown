@@ -5,15 +5,10 @@ const frontMatter = require("front-matter");
 const { parse } = require("query-string");
 const marked = require("marked");
 const micro = require("micro");
-const redis = require("redis");
 
-const cache = redis.createClient();
 const { send } = micro;
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
-const asyncCacheGet = promisify(cache.get).bind(cache);
-const asyncCacheSet = promisify(cache.set).bind(cache);
-const asyncCacheSmembers = promisify(cache.smembers).bind(cache);
 
 const textsDir = "./texts";
 const defaultNamespace = `/mm/api/v1`;
@@ -22,6 +17,82 @@ const apiRoutes = {
   json: `${defaultNamespace}/json`,
   html: `${defaultNamespace}/html`
 };
+let currentCache;
+
+async function establishCache(client) {
+  console.log("establishCache");
+  if (currentCache) {
+    return currentCache;
+  }
+  const redis = require("redis");
+  console.log("require redis");
+  client = client || redis.createClient();
+
+  const cacheDefault = {
+    didError: false,
+    array: {
+      get: () => null,
+      add: () => null
+    },
+    string: {
+      get: () => null,
+      set: () => null
+    }
+  };
+  const error = () => {
+    return new Promise(resolve => {
+      client.on("error", () => {
+        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
+          let update = { [key]: cacheDefault[key] };
+          switch (key) {
+            case "array":
+              update = { array: { get: () => null, add: () => null } };
+              break;
+            case "string":
+              update = { string: { get: () => null, set: () => null } };
+              break;
+          }
+          return Object.assign({}, acc, update);
+        }, {});
+        client.quit();
+        resolve(cacheUpdate);
+      });
+    });
+  };
+  const ready = () => {
+    return new Promise(resolve => {
+      client.on("ready", () => {
+        console.log("ready!");
+        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
+          let update = { [key]: cacheDefault[key] };
+          switch (key) {
+            case "array":
+              update = {
+                array: {
+                  get: promisify(client.smembers).bind(client),
+                  add: client.sadd
+                }
+              };
+              break;
+            case "string":
+              update = {
+                string: {
+                  get: promisify(client.get).bind(client),
+                  set: promisify(client.set).bind(client)
+                }
+              };
+              break;
+          }
+          return Object.assign({}, acc, update);
+        }, {});
+        resolve(cacheUpdate);
+      });
+    });
+  };
+  const result = await Promise.race([error(), ready()]);
+  currentCache = result;
+  return currentCache;
+}
 
 function notFound(res) {
   return send(
@@ -72,24 +143,24 @@ function templateFunction(
 </html>`;
 }
 
-async function attemptTextCacheGet(filepath, fallback) {
+async function attemptTextCacheGet(cache, filepath, fallback) {
   if (!filepath) {
     console.log("bail in attemptCacheGet");
     return;
   }
-  let text = await asyncCacheGet(filepath);
+  let text = await cache.string.get(filepath);
   if (!text) {
     console.log("read file from disk");
     text = await fallback(filepath);
-    asyncCacheSet(filepath, text);
+    cache.string.set(filepath, text);
   }
   return text;
 }
 
 async function ok(options) {
   const args = Object.assign({}, options, { template: templateFunction });
-  const { filepath, path, res, template, string, target } = args;
-  const text = string || (await attemptTextCacheGet(filepath, readFile));
+  const { filepath, path, res, template, string, target, cache } = args;
+  const text = string || (await attemptTextCacheGet(cache, filepath, readFile));
   switch (true) {
     case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
       return text;
@@ -129,20 +200,20 @@ async function readFiles() {
   }
 }
 
-async function attemptCacheReadFiles() {
+async function attemptCacheReadFiles(cache) {
   const key = "text-paths";
-  let texts = await asyncCacheSmembers(key);
+  let texts = await cache.array.get(key);
   if (!texts || texts.length === 0) {
     console.log("read dir from disk");
     texts = await readFiles();
     texts.forEach(path => {
-      cache.sadd(key, path);
+      cache.array.add(key, path);
     });
   }
   return texts;
 }
 
-async function customHandler(handler, res, path, target) {
+async function customHandler(handler, res, path, target, cache) {
   try {
     string = await handler();
     if (typeof string !== "string") {
@@ -156,13 +227,16 @@ async function customHandler(handler, res, path, target) {
     res,
     path,
     string,
-    target
+    target,
+    cache
   });
 }
 
 const server = (options = { routes: {} }) => {
-  const { namespace, routes, templateFunction, routeMaps } = options;
+  const args = Object.assign({}, { cacheClient: establishCache }, options);
+  const { namespace, routes, templateFunction, routeMaps, cacheClient } = args;
   return micro(async (req, res) => {
+    const cache = await cacheClient();
     const [path, search] = req.url.split("?");
     const mappedRoute = routeMaps.default(path).route;
     const { target } = routeMaps.default(path);
@@ -181,14 +255,15 @@ const server = (options = { routes: {} }) => {
       const { handler } = routes[endpoint.substr(1)];
       let { string } = routes[endpoint.substr(1)];
       if (string) {
-        return ok({ res, path, string, target });
+        return ok({ res, path, string, target, cache });
       }
       if (handler) {
-        return await customHandler(handler, res, path, target);
+        console.log("yes handler");
+        return await customHandler(handler, res, path, target, cache);
       }
     } else {
       // Else read the texts.
-      let texts = await attemptCacheReadFiles();
+      let texts = await attemptCacheReadFiles(cache);
       const match = texts.indexOf(`${endpoint.substr(1)}.md`);
       if (match === -1) {
         return notFound(res);
@@ -197,10 +272,14 @@ const server = (options = { routes: {} }) => {
         filepath: `${textsDir}/${texts[match]}`,
         path,
         res,
-        target
+        target,
+        cache
       });
     }
   });
 };
 
 module.exports = server;
+exports = server;
+exports.default = server;
+exports.cacheClient = establishCache;

@@ -1,6 +1,7 @@
 const axios = require("axios");
 const server = require("./index");
 server({
+  // cacheClient: () => true,
   routeMaps: {
     default: route => {
       return route.indexOf("/mm") === 0
