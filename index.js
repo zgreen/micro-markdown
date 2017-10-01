@@ -215,7 +215,8 @@ async function attemptCacheReadFiles(cache, textsDir) {
   return texts;
 }
 
-async function customHandler(handler, res, path, target, cache, apiRoutes) {
+async function customHandler(args) {
+  const { handler, res, path, target, cache, apiRoutes } = args;
   try {
     string = await handler();
     if (typeof string !== "string") {
@@ -283,14 +284,14 @@ const server = (options = { routes: {} }) => {
       }
       if (handler) {
         console.log("yes handler");
-        return await customHandler(
+        return await customHandler({
           handler,
           res,
           path,
           target,
           cache,
           apiRoutes
-        );
+        });
       }
     } else {
       // Else read the texts.
