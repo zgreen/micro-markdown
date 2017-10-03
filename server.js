@@ -1,6 +1,7 @@
 const axios = require("axios");
 const server = require("./index");
 server({
+  auth: "foo:bar",
   // cacheClient: () => true,
   routeMaps: {
     default: route => {
@@ -17,9 +18,12 @@ server({
       handler: () => {
         return new Promise((resolve, reject) => {
           const p1 = axios.get(
-            "http://localhost:3000/mm/api/v1/json/more-please"
+            "http://localhost:3000/mm/api/v1/json/more-please",
+            { headers: { authorization: "foo:bar" } }
           );
-          const p2 = axios.get("http://localhost:3000/mm/api/v1/json/test");
+          const p2 = axios.get("http://localhost:3000/mm/api/v1/json/test", {
+            headers: { authorization: "foo:bar" }
+          });
           Promise.all([p1, p2]).then(
             result => {
               resolve(`<h1>This is a blog.</h1>

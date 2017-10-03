@@ -55,7 +55,6 @@ async function establishCache(client) {
   const ready = () => {
     return new Promise(resolve => {
       client.on("ready", () => {
-        console.log("ready!");
         const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
           let update = { [key]: cacheDefault[key] };
           switch (key) {
@@ -217,6 +216,7 @@ async function attemptCacheReadFiles(cache, textsDir) {
 
 async function customHandler(args) {
   const { handler, res, path, target, cache, apiRoutes } = args;
+  let string;
   try {
     string = await handler();
     if (typeof string !== "string") {
@@ -253,6 +253,7 @@ const server = (options = { routes: {} }) => {
   );
   const {
     apiRoutes,
+    auth,
     namespace,
     routes,
     templateFunction,
@@ -261,6 +262,9 @@ const server = (options = { routes: {} }) => {
     textsDir
   } = args;
   return micro(async (req, res) => {
+    if (auth && req.headers.authorization !== auth) {
+      return send(res, 401, "Unauthorized");
+    }
     const cache = await cacheClient();
     const [path, search] = req.url.split("?");
     const mappedRoute = routeMaps.default(path).route;
@@ -271,7 +275,6 @@ const server = (options = { routes: {} }) => {
     }
     // Bail if this isn't a desired endpoint
     if (!endpoint) {
-      console.log("bail");
       return notFound(res);
     }
     // Check if the path matches a route from the config
@@ -283,7 +286,6 @@ const server = (options = { routes: {} }) => {
         return ok({ apiRoutes, res, path, string, target, cache });
       }
       if (handler) {
-        console.log("yes handler");
         return await customHandler({
           handler,
           res,
