@@ -7,13 +7,9 @@
     "cache": "node cache.js",
     "start": "node server.js",
     "test": "jest --forceExit",
-    "watch": "nodemon -w server.js -w index.js server.js"
+    "watch": "NODE_ENV=dev nodemon -w server.js -w index.js server.js"
   },
-  "keywords": [
-    "markdown",
-    "microservice",
-    "redis"
-  ],
+  "keywords": ["markdown", "microservice", "redis"],
   "author": "Zach Green",
   "license": "GPL-3.0",
   "dependencies": {
@@ -26,6 +22,7 @@
   "devDependencies": {
     "axios": "^0.16.2",
     "jest": "^21.1.0",
-    "nodemon": "^1.12.1"
+    "nodemon": "^1.12.1",
+    "openssl-self-signed-certificate": "^1.1.6"
   }
 }

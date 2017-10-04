@@ -1,7 +1,7 @@
 const axios = require("axios");
 const server = require("./index");
 server({
-  auth: "foo:bar",
+  // auth: "foo:bar",
   // cacheClient: () => true,
   routeMaps: {
     default: route => {

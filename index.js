@@ -1,4 +1,5 @@
 const fs = require("fs");
+const https = require("https");
 const { promisify } = require("util");
 
 const frontMatter = require("front-matter");
@@ -6,7 +7,7 @@ const { parse } = require("query-string");
 const marked = require("marked");
 const micro = require("micro");
 
-const { send } = micro;
+const { run, send } = micro;
 const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
 
@@ -84,6 +85,19 @@ async function establishCache(client) {
   const result = await Promise.race([error(), ready()]);
   currentCache = result;
   return currentCache;
+}
+
+function createMicroServer() {
+  const isDev = process.env.NODE_ENV === "dev";
+  let cert;
+  if (isDev) {
+    cert = require("openssl-self-signed-certificate");
+  }
+  const serverOpts = {
+    key: isDev ? cert.key : process.env.key,
+    cert: isDev ? cert.cert : process.env.cert
+  };
+  return fn => https.createServer(serverOpts, (req, res) => run(req, res, fn));
 }
 
 function notFound(res) {
@@ -261,7 +275,7 @@ const server = (options = { routes: {} }) => {
     cacheClient,
     textsDir
   } = args;
-  return micro(async (req, res) => {
+  return createMicroServer()(async (req, res) => {
     if (auth && req.headers.authorization !== auth) {
       return send(res, 401, "Unauthorized");
     }
