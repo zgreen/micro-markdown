@@ -1,6 +1,6 @@
 {
   "name": "micro-markdown",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -17,13 +17,13 @@
     "front-matter": "^2.2.0",
     "marked": "^0.3.6",
     "micro": "^9.0.0",
+    "openssl-self-signed-certificate": "^1.1.6",
     "query-string": "^5.0.0",
     "redis": "^2.8.0"
   },
   "devDependencies": {
     "axios": "^0.16.2",
     "jest": "^21.1.0",
-    "nodemon": "^1.12.1",
-    "openssl-self-signed-certificate": "^1.1.6"
+    "nodemon": "^1.12.1"
   }
 }
