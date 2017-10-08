@@ -209,7 +209,7 @@ async function readFiles(textsDir) {
     return files.filter(filename => filename.substr(-3) === ".md");
   } catch (err) {
     console.error(err);
-    process.exit(1);
+    return []
   }
 }
 
@@ -306,7 +306,7 @@ const server = (options = { routes: {} }) => {
           apiRoutes
         });
       }
-    } else {
+    } else if () {
       // Else read the texts.
       let texts = await attemptCacheReadFiles(cache, textsDir);
       const match = texts.indexOf(`${endpoint.substr(1)}.md`);
