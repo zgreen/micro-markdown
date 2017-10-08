@@ -13,80 +13,6 @@ const asyncReadDir = promisify(fs.readdir);
 
 let currentCache;
 
-async function establishCache(client) {
-  console.log("establishCache");
-  if (currentCache) {
-    return currentCache;
-  }
-  const redis = require("redis");
-  console.log("require redis");
-  client = client || redis.createClient();
-
-  const cacheDefault = {
-    didError: false,
-    array: {
-      get: () => null,
-      add: () => null
-    },
-    string: {
-      get: () => null,
-      set: () => null
-    }
-  };
-  const error = () => {
-    return new Promise(resolve => {
-      client.on("error", () => {
-        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
-          let update = { [key]: cacheDefault[key] };
-          switch (key) {
-            case "array":
-              update = { array: { get: () => null, add: () => null } };
-              break;
-            case "string":
-              update = { string: { get: () => null, set: () => null } };
-              break;
-          }
-          return Object.assign({}, acc, update);
-        }, {});
-        client.quit();
-        resolve(cacheUpdate);
-      });
-    });
-  };
-  const ready = () => {
-    return new Promise(resolve => {
-      client.on("ready", () => {
-        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
-          let update = { [key]: cacheDefault[key] };
-          switch (key) {
-            case "array":
-              update = {
-                array: {
-                  get: promisify(client.smembers).bind(client),
-                  add: client.sadd
-                }
-              };
-              break;
-            case "string":
-              update = {
-                string: {
-                  get: promisify(client.get).bind(client),
-                  set: promisify(client.set).bind(client)
-                }
-              };
-              break;
-          }
-          return Object.assign({}, acc, update);
-        }, {});
-        resolve(cacheUpdate);
-      });
-    });
-  };
-  const result = await Promise.race([error(), ready()]);
-  currentCache = result;
-  return currentCache;
-}
-
 function createMicroServer() {
   const isDev = process.env.NODE_ENV === "dev";
   let cert;
@@ -151,16 +77,88 @@ function templateFunction(
 
 async function attemptTextCacheGet(cache, filepath, fallback) {
   if (!filepath) {
-    console.log("bail in attemptCacheGet");
     return;
   }
   let text = await cache.string.get(filepath);
   if (!text) {
-    console.log("read file from disk");
     text = await fallback(filepath);
     cache.string.set(filepath, text);
   }
   return text;
+}
+
+async function establishCache(client) {
+  if (currentCache) {
+    return currentCache;
+  }
+  const redis = require("redis");
+  const host = process.env.REDIS_PORT_6379_TCP_ADDR || "redis";
+  const port = process.env.REDIS_PORT_6379_TCP_PORT || 6379;
+  client = client || redis.createClient(port, host);
+
+  const cacheDefault = {
+    didError: false,
+    array: {
+      get: () => null,
+      add: () => null
+    },
+    string: {
+      get: () => null,
+      set: () => null
+    }
+  };
+  const error = () => {
+    return new Promise(resolve => {
+      client.on("error", () => {
+        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
+          let update = { [key]: cacheDefault[key] };
+          switch (key) {
+            case "array":
+              update = { array: { get: () => null, add: () => null } };
+              break;
+            case "string":
+              update = { string: { get: () => null, set: () => null } };
+              break;
+          }
+          return Object.assign({}, acc, update);
+        }, {});
+        client.quit();
+        resolve(cacheUpdate);
+      });
+    });
+  };
+  const ready = () => {
+    return new Promise(resolve => {
+      client.on("ready", () => {
+        const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
+          let update = { [key]: cacheDefault[key] };
+          switch (key) {
+            case "array":
+              update = {
+                array: {
+                  get: promisify(client.smembers).bind(client),
+                  add: promisify(client.sadd).bind(client)
+                }
+              };
+              break;
+            case "string":
+              update = {
+                string: {
+                  get: promisify(client.get).bind(client),
+                  set: promisify(client.set).bind(client)
+                }
+              };
+              break;
+          }
+          return Object.assign({}, acc, update);
+        }, {});
+        resolve(cacheUpdate);
+      });
+    });
+  };
+  const result = await Promise.race([error(), ready()]);
+  currentCache = result;
+  return currentCache;
 }
 
 async function ok(options) {
@@ -219,7 +217,6 @@ async function attemptCacheReadFiles(cache, textsDir) {
   const key = "text-paths";
   let texts = await cache.array.get(key);
   if (!texts || texts.length === 0) {
-    console.log("read dir from disk");
     texts = await readFiles(textsDir);
     texts.forEach(path => {
       cache.array.add(key, path);
@@ -234,7 +231,7 @@ async function customHandler(args) {
   try {
     string = await handler();
     if (typeof string !== "string") {
-      console.error("string is not a string.");
+      console.error(`${string} is not a string.`);
       return notFound(res);
     }
   } catch (err) {
