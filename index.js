@@ -99,9 +99,10 @@ async function establishCache(client) {
     return currentCache;
   }
   const redis = require("redis");
-  const host = process.env.REDIS_PORT_6379_TCP_ADDR || "redis";
-  const port = process.env.REDIS_PORT_6379_TCP_PORT || 6379;
-  client = client || redis.createClient(port, host);
+  const host = process.env.REDIS_HOST || "redis";
+  const port = process.env.REDIS_PORT || 6379;
+  const password = process.env.REDIS_PASSWORD;
+  client = client || redis.createClient({ host, password, port });
 
   const cacheDefault = {
     didError: false,
@@ -249,7 +250,14 @@ async function customHandler(args) {
   let markedString;
   try {
     const result = await handler();
-    const { markdown, html } = result;
+    if (!result.markdown && !result.html) {
+      console.error(
+        `A custom route handler must return an object with at least a \`markdown\` or \`html\` property.`
+      );
+      return notFound(res);
+    }
+    const html = result.html || (string => string);
+    const { markdown } = result;
     markedString = html(marked(markdown));
     if (typeof markedString !== "string") {
       console.error(`${markedString} is not a string.`);
