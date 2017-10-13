@@ -118,6 +118,7 @@ async function establishCache(client) {
       get: () => null,
       add: () => null
     },
+    flushall: () => null,
     string: {
       get: () => null,
       set: () => null
@@ -156,6 +157,9 @@ async function establishCache(client) {
                   add: promisify(client.sadd).bind(client)
                 }
               };
+              break;
+            case "flushall":
+              update = client.flushall;
               break;
             case "string":
               update = {
