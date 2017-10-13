@@ -200,7 +200,7 @@ async function ok(options) {
         title
       };
     }
-    case string && caseHTML: {
+    case text && caseHTML: {
       const { body, description } = parseText(text);
       ({ title } = parseText(text));
       return template(marked(body), title, styles);
@@ -270,8 +270,7 @@ async function customHandler(args) {
   });
 }
 
-const server = (options = { routes: {} }) => {
-  console.log("hii");
+const server = options => {
   const defaultNamespace = `/mm/api/v1`;
   const args = Object.assign(
     {},
@@ -280,6 +279,10 @@ const server = (options = { routes: {} }) => {
         raw: `${defaultNamespace}/raw`,
         json: `${defaultNamespace}/json`,
         html: `${defaultNamespace}/html`
+      },
+      routes: {},
+      routeMaps: {
+        default: route => route
       },
       cacheClient: establishCache,
       textsDir: "./texts"
