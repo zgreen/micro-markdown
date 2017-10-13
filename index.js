@@ -1,5 +1,4 @@
 const fs = require("fs");
-const https = require("https");
 const { promisify } = require("util");
 
 const frontMatter = require("front-matter");
@@ -19,11 +18,19 @@ function createMicroServer() {
   if (isDev) {
     cert = require("openssl-self-signed-certificate");
   }
-  const serverOpts = {
-    key: isDev ? cert.key : process.env.key,
-    cert: isDev ? cert.cert : process.env.cert
-  };
-  return fn => https.createServer(serverOpts, (req, res) => run(req, res, fn));
+  // If we have these, use https
+  if (isDev || (process.env.key && process.env.cert)) {
+    const https = require("https");
+    const serverOpts = {
+      key: isDev ? cert.key : process.env.key,
+      cert: isDev ? cert.cert : process.env.cert
+    };
+    return fn =>
+      https.createServer(serverOpts, (req, res) => run(req, res, fn));
+  }
+  // else use http
+  const http = require("http");
+  return fn => http.createServer((req, res) => run(req, res, fn));
 }
 
 function notFound(res) {
@@ -171,23 +178,35 @@ async function ok(options) {
     template,
     string,
     target,
-    cache
+    cache,
+    markedString,
+    styles
   } = args;
-  const text = string || (await attemptTextCacheGet(cache, filepath, readFile));
+  let { title } = args;
+  const text =
+    string ||
+    markedString ||
+    (await attemptTextCacheGet(cache, filepath, readFile));
+  const caseHTML = target === "html" || path.indexOf(apiRoutes.html) === 0;
   switch (true) {
     case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
       return text;
     case target === "json" || path.indexOf(apiRoutes.json) === 0: {
-      const { body, description, title } = parseText(text);
+      const { body, description } = parseText(text);
+      ({ title } = parseText(text));
       return {
         body,
         description,
         title
       };
     }
-    case target === "html" || path.indexOf(apiRoutes.html) === 0: {
-      const { body, description, title } = parseText(text);
-      return template(marked(body), title);
+    case string && caseHTML: {
+      const { body, description } = parseText(text);
+      ({ title } = parseText(text));
+      return template(marked(body), title, styles);
+    }
+    case markedString && caseHTML: {
+      return template(markedString, title, styles);
     }
     default:
       return notFound(res);
@@ -226,12 +245,14 @@ async function attemptCacheReadFiles(cache, textsDir) {
 }
 
 async function customHandler(args) {
-  const { handler, res, path, target, cache, apiRoutes } = args;
-  let string;
+  const { handler, res, path, target, cache, apiRoutes, styles, title } = args;
+  let markedString;
   try {
-    string = await handler();
-    if (typeof string !== "string") {
-      console.error(`${string} is not a string.`);
+    const result = await handler();
+    const { markdown, html } = result;
+    markedString = html(marked(markdown));
+    if (typeof markedString !== "string") {
+      console.error(`${markedString} is not a string.`);
       return notFound(res);
     }
   } catch (err) {
@@ -241,13 +262,16 @@ async function customHandler(args) {
     apiRoutes,
     res,
     path,
-    string,
     target,
-    cache
+    cache,
+    markedString,
+    styles,
+    title
   });
 }
 
 const server = (options = { routes: {} }) => {
+  console.log("hii");
   const defaultNamespace = `/mm/api/v1`;
   const args = Object.assign(
     {},
@@ -266,13 +290,20 @@ const server = (options = { routes: {} }) => {
     apiRoutes,
     auth,
     namespace,
-    routes,
     templateFunction,
     routeMaps,
     cacheClient,
     textsDir
   } = args;
-  return createMicroServer()(async (req, res) => {
+  // Allow for `/` route prefixes
+  const routes = Object.keys(args.routes).reduce(
+    (acc, key) =>
+      Object.assign({}, acc, {
+        [key.indexOf("/") === 0 ? key.substr(1) : key]: args.routes[key]
+      }),
+    {}
+  );
+  const asyncServer = async (req, res) => {
     if (auth && req.headers.authorization !== auth) {
       return send(res, 401, "Unauthorized");
     }
@@ -291,7 +322,7 @@ const server = (options = { routes: {} }) => {
     // Check if the path matches a route from the config
     if (routes[endpoint.substr(1)]) {
       const keys = Object.keys(routes);
-      const { handler } = routes[endpoint.substr(1)];
+      const { handler, styles, title } = routes[endpoint.substr(1)];
       let { string } = routes[endpoint.substr(1)];
       if (string) {
         return ok({ apiRoutes, res, path, string, target, cache });
@@ -303,7 +334,9 @@ const server = (options = { routes: {} }) => {
           path,
           target,
           cache,
-          apiRoutes
+          apiRoutes,
+          styles,
+          title
         });
       }
     } else {
@@ -322,7 +355,8 @@ const server = (options = { routes: {} }) => {
         cache
       });
     }
-  });
+  };
+  return createMicroServer()(asyncServer);
 };
 
 module.exports = server;
