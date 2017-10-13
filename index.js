@@ -11,6 +11,7 @@ const asyncReadFile = promisify(fs.readFile);
 const asyncReadDir = promisify(fs.readdir);
 
 let currentCache;
+let didFlush = false;
 
 function createMicroServer() {
   const isDev = process.env.NODE_ENV === "dev";
@@ -96,6 +97,13 @@ async function attemptTextCacheGet(cache, filepath, fallback) {
 
 async function establishCache(client) {
   if (currentCache) {
+    if (!didFlush && process.env.FLUSH_CACHE) {
+      currentCache.flushall(err => {
+        if (!err) {
+          didFlush = true;
+        }
+      });
+    }
     return currentCache;
   }
   const redis = require("redis");
