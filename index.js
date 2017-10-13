@@ -127,12 +127,15 @@ async function establishCache(client) {
   const error = () => {
     return new Promise(resolve => {
       client.on("error", () => {
+        console.error("Cache client error.");
         const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
           let update = { [key]: cacheDefault[key] };
           switch (key) {
             case "array":
               update = { array: { get: () => null, add: () => null } };
               break;
+            case "flushall":
+              update = { flushall: () => null };
             case "string":
               update = { string: { get: () => null, set: () => null } };
               break;
@@ -147,6 +150,7 @@ async function establishCache(client) {
   const ready = () => {
     return new Promise(resolve => {
       client.on("ready", () => {
+        console.log(`Cache client ready.`);
         const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
           let update = { [key]: cacheDefault[key] };
           switch (key) {
@@ -159,7 +163,7 @@ async function establishCache(client) {
               };
               break;
             case "flushall":
-              update = client.flushall;
+              update = { flushall: client.flushall.bind(client) };
               break;
             case "string":
               update = {
