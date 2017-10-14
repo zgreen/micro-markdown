@@ -95,9 +95,9 @@ async function attemptTextCacheGet(cache, filepath, fallback) {
   return text;
 }
 
-async function establishCache(client) {
+async function establishCache(shouldFlush = true, client) {
   if (currentCache) {
-    if (!didFlush && process.env.FLUSH_CACHE) {
+    if (shouldFlush && !didFlush) {
       currentCache.flushall(err => {
         if (!err) {
           didFlush = true;
@@ -136,6 +136,7 @@ async function establishCache(client) {
               break;
             case "flushall":
               update = { flushall: () => null };
+              break;
             case "string":
               update = { string: { get: () => null, set: () => null } };
               break;
@@ -309,6 +310,7 @@ const server = options => {
         default: route => route
       },
       cacheClient: establishCache,
+      shouldFlush: true,
       textsDir: "./texts"
     },
     options
@@ -320,6 +322,7 @@ const server = options => {
     templateFunction,
     routeMaps,
     cacheClient,
+    shouldFlush,
     textsDir
   } = args;
   // Allow for `/` route prefixes
@@ -334,7 +337,7 @@ const server = options => {
     if (auth && req.headers.authorization !== auth) {
       return send(res, 401, "Unauthorized");
     }
-    const cache = await cacheClient();
+    const cache = await cacheClient(shouldFlush);
     const [path, search] = req.url.split("?");
     const mappedRoute = routeMaps.default(path).route;
     const { target } = routeMaps.default(path);
