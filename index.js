@@ -1,71 +1,69 @@
-const fs = require("fs");
-const { promisify } = require("util");
+const fs = require('fs')
+const { promisify } = require('util')
 
-const frontMatter = require("front-matter");
-const { parse } = require("query-string");
-const marked = require("marked");
-const micro = require("micro");
+const frontMatter = require('front-matter')
+const marked = require('marked')
+const micro = require('micro')
 
-const { run, send } = micro;
-const asyncReadFile = promisify(fs.readFile);
-const asyncReadDir = promisify(fs.readdir);
+const { run, send } = micro
+const asyncReadFile = promisify(fs.readFile)
+const asyncReadDir = promisify(fs.readdir)
 
-let currentCache;
-let didFlush = false;
+let currentCache
+let didFlush = false
 
-function createMicroServer() {
-  const isDev = process.env.NODE_ENV === "dev";
-  let cert;
+function createMicroServer () {
+  const isDev = process.env.NODE_ENV === 'dev'
+  let cert
   if (isDev) {
-    cert = require("openssl-self-signed-certificate");
+    cert = require('openssl-self-signed-certificate')
   }
   // If we have these, use https
   if (isDev || (process.env.key && process.env.cert)) {
-    const https = require("https");
+    const https = require('https')
     const serverOpts = {
       key: isDev ? cert.key : process.env.key,
       cert: isDev ? cert.cert : process.env.cert
-    };
-    return fn =>
-      https.createServer(serverOpts, (req, res) => run(req, res, fn));
+    }
+    return fn => https.createServer(serverOpts, (req, res) => run(req, res, fn))
   }
   // else use http
-  const http = require("http");
-  return fn => http.createServer((req, res) => run(req, res, fn));
+  const http = require('http')
+  return fn => http.createServer((req, res) => run(req, res, fn))
 }
 
-function notFound(res) {
+function notFound (res) {
   return send(
     res,
     404,
     templateFunction(
       `<h1>Sorry, that page wasn't found.</h1>`,
-      "Page Not Found"
+      'Page Not Found'
     )
-  );
+  )
 }
 
-function parseText(text) {
-  const { attributes, body } = frontMatter(text);
-  const { description, title } = attributes;
-  return { body, description, title };
+function parseText (text) {
+  const { attributes, body } = frontMatter(text)
+  const { description, title } = attributes
+  return { body, description, title }
 }
 
 /**
  * Match routes against a RegEx.
  */
-function routesRegExp(routeMap, apiRoutes) {
+function routesRegExp (routeMap, apiRoutes) {
   return new RegExp(
     Object.keys(apiRoutes)
       .concat(routeMap || [])
       .map(keys => apiRoutes[keys])
-      .join("|")
-  );
+      .join('|')
+  )
 }
 
-function templateFunction(
+function templateFunction (
   body,
-  title = "Document",
+  title = 'Document',
   styles = `body{font-family: monospace}`
 ) {
   return `<!DOCTYPE html>
@@ -80,37 +78,37 @@ function templateFunction(
 <body>
   ${body}
 </body>
-</html>`;
+</html>`
 }
 
-async function attemptTextCacheGet(cache, filepath, fallback) {
+async function attemptTextCacheGet (cache, filepath, fallback) {
   if (!filepath) {
-    return;
+    return
   }
-  let text = await cache.string.get(filepath);
+  let text = await cache.string.get(filepath)
   if (!text) {
-    text = await fallback(filepath);
-    cache.string.set(filepath, text);
+    text = await fallback(filepath)
+    cache.string.set(filepath, text)
   }
-  return text;
+  return text
 }
 
-async function establishCache(shouldFlush = true, client) {
+async function establishCache (shouldFlush = true, client) {
   if (currentCache) {
     if (shouldFlush && !didFlush) {
       currentCache.flushall(err => {
         if (!err) {
-          didFlush = true;
+          didFlush = true
         }
-      });
+      })
     }
-    return currentCache;
+    return currentCache
   }
-  const redis = require("redis");
-  const host = process.env.REDIS_HOST || "redis";
-  const port = process.env.REDIS_PORT || 6379;
-  const password = process.env.REDIS_PASSWORD;
-  client = client || redis.createClient({ host, password, port });
+  const redis = require('redis')
+  const host = process.env.REDIS_HOST || 'redis'
+  const port = process.env.REDIS_PORT || 6379
+  const password = process.env.REDIS_PASSWORD
+  client = client || redis.createClient({ host, password, port })
 
   const cacheDefault = {
     didError: false,
@@ -123,71 +121,71 @@ async function establishCache(shouldFlush = true, client) {
       get: () => null,
       set: () => null
     }
-  };
+  }
   const error = () => {
     return new Promise(resolve => {
-      client.on("error", () => {
-        console.error("Cache client error.");
+      client.on('error', () => {
+        console.error('Cache client error.')
         const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
-          let update = { [key]: cacheDefault[key] };
+          let update = { [key]: cacheDefault[key] }
           switch (key) {
-            case "array":
-              update = { array: { get: () => null, add: () => null } };
-              break;
-            case "flushall":
-              update = { flushall: () => null };
-              break;
-            case "string":
-              update = { string: { get: () => null, set: () => null } };
-              break;
+            case 'array':
+              update = { array: { get: () => null, add: () => null } }
+              break
+            case 'flushall':
+              update = { flushall: () => null }
+              break
+            case 'string':
+              update = { string: { get: () => null, set: () => null } }
+              break
           }
-          return Object.assign({}, acc, update);
-        }, {});
-        client.quit();
-        resolve(cacheUpdate);
-      });
-    });
-  };
+          return Object.assign({}, acc, update)
+        }, {})
+        client.quit()
+        resolve(cacheUpdate)
+      })
+    })
+  }
   const ready = () => {
     return new Promise(resolve => {
-      client.on("ready", () => {
-        console.log(`Cache client ready.`);
+      client.on('ready', () => {
+        console.log(`Cache client ready.`)
         const cacheUpdate = Object.keys(cacheDefault).reduce((acc, key) => {
-          let update = { [key]: cacheDefault[key] };
+          let update = { [key]: cacheDefault[key] }
           switch (key) {
-            case "array":
+            case 'array':
               update = {
                 array: {
                   get: promisify(client.smembers).bind(client),
                   add: promisify(client.sadd).bind(client)
                 }
-              };
-              break;
-            case "flushall":
-              update = { flushall: client.flushall.bind(client) };
-              break;
-            case "string":
+              }
+              break
+            case 'flushall':
+              update = { flushall: client.flushall.bind(client) }
+              break
+            case 'string':
               update = {
                 string: {
                   get: promisify(client.get).bind(client),
                   set: promisify(client.set).bind(client)
                 }
-              };
-              break;
+              }
+              break
           }
-          return Object.assign({}, acc, update);
-        }, {});
-        resolve(cacheUpdate);
-      });
-    });
-  };
-  const result = await Promise.race([error(), ready()]);
-  currentCache = result;
-  return currentCache;
+          return Object.assign({}, acc, update)
+        }, {})
+        resolve(cacheUpdate)
+      })
+    })
+  }
+  const result = await Promise.race([error(), ready()])
+  currentCache = result
+  return currentCache
 }
 
-async function ok(options) {
-  const args = Object.assign({}, options, { template: templateFunction });
+async function ok (options) {
+  const args = Object.assign({}, options, { template: templateFunction })
   const {
     apiRoutes,
     filepath,
@@ -199,89 +197,89 @@ async function ok(options) {
     cache,
     markedString,
     styles
-  } = args;
-  let { title } = args;
+  } = args
+  let { title } = args
   const text =
     string ||
     markedString ||
-    (await attemptTextCacheGet(cache, filepath, readFile));
-  const caseHTML = target === "html" || path.indexOf(apiRoutes.html) === 0;
+    (await attemptTextCacheGet(cache, filepath, readFile))
+  const caseHTML = target === 'html' || path.indexOf(apiRoutes.html) === 0
   switch (true) {
-    case target === "raw" || path.indexOf(apiRoutes.raw) === 0:
-      return text;
-    case target === "json" || path.indexOf(apiRoutes.json) === 0: {
-      const { body, description } = parseText(text);
-      ({ title } = parseText(text));
+    case target === 'raw' || path.indexOf(apiRoutes.raw) === 0:
+      return text
+    case target === 'json' || path.indexOf(apiRoutes.json) === 0: {
+      const { body, description } = parseText(text)
+      ;({ title } = parseText(text))
       return {
         body,
         description,
         title
-      };
+      }
     }
     case text && caseHTML: {
-      const { body, description } = parseText(text);
-      ({ title } = parseText(text));
-      return template(marked(body), title, styles);
+      const { body } = parseText(text)
+      ;({ title } = parseText(text))
+      return template(marked(body), title, styles)
     }
     case markedString && caseHTML: {
-      return template(markedString, title, styles);
+      return template(markedString, title, styles)
     }
     default:
-      return notFound(res);
+      return notFound(res)
   }
 }
 
-async function readFile(path) {
+async function readFile (path) {
   try {
-    return await asyncReadFile(path, "utf8");
+    return await asyncReadFile(path, 'utf8')
   } catch (err) {
-    console.error(err);
-    process.exit(1);
+    console.error(err)
+    process.exit(1)
   }
 }
 
-async function readFiles(textsDir) {
+async function readFiles (textsDir) {
   try {
-    const files = await asyncReadDir(textsDir, "utf8");
-    return files.filter(filename => filename.substr(-3) === ".md");
+    const files = await asyncReadDir(textsDir, 'utf8')
+    return files.filter(filename => filename.substr(-3) === '.md')
   } catch (err) {
-    console.error(err);
-    return [];
+    console.error(err)
+    return []
   }
 }
 
-async function attemptCacheReadFiles(cache, textsDir) {
-  const key = "text-paths";
-  let texts = await cache.array.get(key);
+async function attemptCacheReadFiles (cache, textsDir) {
+  const key = 'text-paths'
+  let texts = await cache.array.get(key)
   if (!texts || texts.length === 0) {
-    texts = await readFiles(textsDir);
+    texts = await readFiles(textsDir)
     texts.forEach(path => {
-      cache.array.add(key, path);
-    });
+      cache.array.add(key, path)
+    })
   }
-  return texts;
+  return texts
 }
 
-async function customHandler(args) {
-  const { handler, res, path, target, cache, apiRoutes, styles, title } = args;
-  let markedString;
+async function customHandler (args) {
+  const { handler, res, path, target, cache, apiRoutes, styles, title } = args
+  let markedString
   try {
-    const result = await handler();
+    const result = await handler()
     if (!result.markdown && !result.html) {
       console.error(
         `A custom route handler must return an object with at least a \`markdown\` or \`html\` property.`
-      );
-      return notFound(res);
+      )
+      return notFound(res)
     }
-    const html = result.html || (string => string);
-    const { markdown } = result;
-    markedString = html(marked(markdown));
-    if (typeof markedString !== "string") {
-      console.error(`${markedString} is not a string.`);
-      return notFound(res);
+    const html = result.html || (string => string)
+    const { markdown } = result
+    markedString = html(marked(markdown))
+    if (typeof markedString !== 'string') {
+      console.error(`${markedString} is not a string.`)
+      return notFound(res)
     }
   } catch (err) {
-    return notFound(res);
+    return notFound(res)
   }
   return ok({
     apiRoutes,
@@ -292,11 +290,11 @@ async function customHandler(args) {
     markedString,
     styles,
     title
-  });
+  })
 }
 
 const server = options => {
-  const defaultNamespace = `/mm/api/v1`;
+  const defaultNamespace = `/mm/api/v1`
   const args = Object.assign(
     {},
     {
@@ -311,54 +309,51 @@ const server = options => {
       },
       cacheClient: establishCache,
       shouldFlush: true,
-      textsDir: "./texts"
+      textsDir: './texts'
     },
     options
-  );
+  )
   const {
     apiRoutes,
     auth,
-    namespace,
-    templateFunction,
     routeMaps,
     cacheClient,
     shouldFlush,
     textsDir
-  } = args;
+  } = args
   // Allow for `/` route prefixes
   const routes = Object.keys(args.routes).reduce(
     (acc, key) =>
       Object.assign({}, acc, {
-        [key.indexOf("/") === 0 ? key.substr(1) : key]: args.routes[key]
+        [key.indexOf('/') === 0 ? key.substr(1) : key]: args.routes[key]
       }),
     {}
-  );
+  )
   const asyncServer = async (req, res) => {
     if (auth && req.headers.authorization !== auth) {
-      return send(res, 401, "Unauthorized");
+      return send(res, 401, 'Unauthorized')
     }
-    const cache = await cacheClient(shouldFlush);
-    const [path, search] = req.url.split("?");
-    const mappedRoute = routeMaps.default(path).route;
-    const { target } = routeMaps.default(path);
-    let endpoint = routeMaps.default(path).route;
+    const cache = await cacheClient(shouldFlush)
+    const [path] = req.url.split('?')
+    const mappedRoute = routeMaps.default(path).route
+    const { target } = routeMaps.default(path)
+    let endpoint = routeMaps.default(path).route
     if (!endpoint) {
-      [, endpoint] = path.split(routesRegExp(mappedRoute, apiRoutes));
+      ;[, endpoint] = path.split(routesRegExp(mappedRoute, apiRoutes))
     }
     // Bail if this isn't a desired endpoint
     if (!endpoint) {
-      return notFound(res);
+      return notFound(res)
     }
     // Check if the path matches a route from the config
     if (routes[endpoint.substr(1)]) {
-      const keys = Object.keys(routes);
-      const { handler, styles, title } = routes[endpoint.substr(1)];
-      let { string } = routes[endpoint.substr(1)];
+      const { handler, styles, title } = routes[endpoint.substr(1)]
+      let { string } = routes[endpoint.substr(1)]
       if (string) {
-        return ok({ apiRoutes, res, path, string, target, cache });
+        return ok({ apiRoutes, res, path, string, target, cache })
       }
       if (handler) {
-        return await customHandler({
+        return customHandler({
           handler,
           res,
           path,
@@ -367,14 +362,14 @@ const server = options => {
           apiRoutes,
           styles,
           title
-        });
+        })
       }
     } else {
       // Else read the texts.
-      let texts = await attemptCacheReadFiles(cache, textsDir);
-      const match = texts.indexOf(`${endpoint.substr(1)}.md`);
+      let texts = await attemptCacheReadFiles(cache, textsDir)
+      const match = texts.indexOf(`${endpoint.substr(1)}.md`)
       if (match === -1) {
-        return notFound(res);
+        return notFound(res)
       }
       return ok({
         apiRoutes,
@@ -383,13 +378,13 @@ const server = options => {
         res,
         target,
         cache
-      });
+      })
     }
-  };
-  return createMicroServer()(asyncServer);
-};
+  }
+  return createMicroServer()(asyncServer)
+}
 
-module.exports = server;
-exports = server;
-exports.default = server;
-exports.cacheClient = establishCache;
+module.exports = server
+exports = server
+exports.default = server
+exports.cacheClient = establishCache
