@@ -1,6 +1,8 @@
 # micro-markdown
 
-> ⚠️ Under active development; not stable. ⚠️
+A markdown server.
+
+> ⚠️ Under active development; not stable! ⚠️
 
 `micro-markdown` is a markdown server. It serves both markdown files and markdown strings. It's built on top of Zeit's `micro`, and uses a redis cache by default. In the spirit of `micro`, `micro-markdown` tries to be as async as possible.
 
@@ -94,3 +96,12 @@ REDIS_PASSWORD="YOUR_REDIS_PASSWORD"
 ```
 
 By default, `micro-markdown` will flush the redis cache the first time it is called.
+
+## Why?
+
+I wanted a simple server that would dynamically render and route markdown.
+
+I tried other options:
+
+- Static site: Renders markdown, but requires a build.
+- SSR with React, Vue etc.: There are great tools for this. I couldn't find a good option that would let my dynamically render flat markdown files to custom routes, though.
