@@ -4,6 +4,7 @@ const { promisify } = require('util')
 const frontMatter = require('front-matter')
 const marked = require('marked')
 const micro = require('micro')
+const redis = require('redis')
 
 const { run, send } = micro
 const asyncReadFile = promisify(fs.readFile)
@@ -32,6 +33,24 @@ function createMicroServer () {
   return fn => http.createServer((req, res) => run(req, res, fn))
 }
 
+function matchWithParams (paths, endpoint) {
+  const endpointSplits = endpoint.split('/')
+  const match = paths.find(path => {
+    return path.length && endpointSplits[0] === path.split('/')[0]
+  })
+  if (match.indexOf(':') !== -1 && match) {
+    const pathSplits = match.split('/:')
+    return pathSplits
+      .slice(1)
+      .reduce(
+        (acc, cur, idx) =>
+          Object.assign({}, acc, { [cur]: endpointSplits[idx + 1] }),
+        {}
+      )
+  }
+  return {}
+}
+
 function notFound (res) {
   return send(
     res,
@@ -43,6 +62,12 @@ function notFound (res) {
   )
 }
 
+/**
+ * Parse some text using `frontmatter`.
+ *
+ * @param {string} text Markdown text.
+ * @return {Object} Parsed frontmatter.
+ */
 function parseText (text) {
   const { attributes, body } = frontMatter(text)
   const { description, title } = attributes
@@ -81,14 +106,21 @@ function templateFunction (
 </html>`
 }
 
-async function attemptTextCacheGet (cache, filepath, fallback) {
+async function attemptTextCacheGet (cache, filepath, fallback = readFile) {
   if (!filepath) {
     return
   }
-  let text = await cache.string.get(filepath)
+  let text
+  try {
+    text = await cache.string.get(filepath)
+  } catch (e) {
+    text = await fallback(filepath)
+  }
   if (!text) {
     text = await fallback(filepath)
-    cache.string.set(filepath, text)
+    if (cache) {
+      cache.string.set(filepath, text)
+    }
   }
   return text
 }
@@ -104,7 +136,7 @@ async function establishCache (shouldFlush = true, client) {
     }
     return currentCache
   }
-  const redis = require('redis')
+
   const host = process.env.REDIS_HOST || 'redis'
   const port = process.env.REDIS_PORT || 6379
   const password = process.env.REDIS_PASSWORD
@@ -185,7 +217,6 @@ async function establishCache (shouldFlush = true, client) {
 }
 
 async function ok (options) {
-  const args = Object.assign({}, options, { template: templateFunction })
   const {
     apiRoutes,
     filepath,
@@ -197,8 +228,8 @@ async function ok (options) {
     cache,
     markedString,
     styles
-  } = args
-  let { title } = args
+  } = options
+  let { title } = options
   const text =
     string ||
     markedString ||
@@ -217,8 +248,9 @@ async function ok (options) {
       }
     }
     case text && caseHTML: {
-      const { body } = parseText(text)
-      ;({ title } = parseText(text))
+      const parsedText = parseText(text)
+      const { body } = parsedText
+      ;({ title } = parsedText)
       return template(marked(body), title, styles)
     }
     case markedString && caseHTML: {
@@ -261,22 +293,37 @@ async function attemptCacheReadFiles (cache, textsDir) {
 }
 
 async function customHandler (args) {
-  const { handler, res, path, target, cache, apiRoutes, styles, title } = args
+  const {
+    handler,
+    res,
+    path,
+    cache,
+    apiRoutes,
+    params,
+    styles,
+    template,
+    title
+  } = args
+  let { target } = args
   let markedString
+  let string
   try {
     const result = await handler()
-    if (!result.markdown && !result.html) {
-      console.error(
-        `A custom route handler must return an object with at least a \`markdown\` or \`html\` property.`
+    if (result.raw) {
+      string = await result.raw(
+        path,
+        params,
+        attemptTextCacheGet.bind(null, cache)
       )
-      return notFound(res)
-    }
-    const html = result.html || (string => string)
-    const { markdown } = result
-    markedString = html(marked(markdown))
-    if (typeof markedString !== 'string') {
-      console.error(`${markedString} is not a string.`)
-      return notFound(res)
+      target = 'raw'
+    } else {
+      const html = result.html || (string => string)
+      const { markdown } = result
+      markedString = html(marked(markdown))
+      if (typeof markedString !== 'string') {
+        console.error(`${markedString} is not a string.`)
+        return notFound(res)
+      }
     }
   } catch (err) {
     return notFound(res)
@@ -288,7 +335,9 @@ async function customHandler (args) {
     target,
     cache,
     markedString,
+    string,
     styles,
+    template,
     title
   })
 }
@@ -309,6 +358,8 @@ const server = options => {
       },
       cacheClient: establishCache,
       shouldFlush: true,
+      markedOptions: {},
+      template: templateFunction,
       textsDir: './texts'
     },
     options
@@ -319,8 +370,12 @@ const server = options => {
     routeMaps,
     cacheClient,
     shouldFlush,
-    textsDir
+    markedOptions,
+    template,
+    textsDir,
+    title
   } = args
+  marked.setOptions(markedOptions)
   // Allow for `/` route prefixes
   const routes = Object.keys(args.routes).reduce(
     (acc, key) =>
@@ -345,12 +400,19 @@ const server = options => {
     if (!endpoint) {
       return notFound(res)
     }
+    const params = matchWithParams(Object.keys(routes), endpoint.substr(1))
     // Check if the path matches a route from the config
-    if (routes[endpoint.substr(1)]) {
-      const { handler, styles, title } = routes[endpoint.substr(1)]
-      let { string } = routes[endpoint.substr(1)]
+    if (routes[endpoint.substr(1)] || Object.keys(params).length) {
+      const key = params
+        ? Object.keys(params).reduce(
+          (acc, cur) => `${acc}/:${cur}`,
+          endpoint.split('/')[1]
+        )
+        : endpoint.substr(1)
+      const { handler, styles, title } = routes[key]
+      let { string } = routes[key]
       if (string) {
-        return ok({ apiRoutes, res, path, string, target, cache })
+        return ok({ apiRoutes, res, path, string, target, title, cache })
       }
       if (handler) {
         return customHandler({
@@ -360,7 +422,9 @@ const server = options => {
           target,
           cache,
           apiRoutes,
+          params,
           styles,
+          template,
           title
         })
       }
@@ -377,7 +441,9 @@ const server = options => {
         path,
         res,
         target,
-        cache
+        cache,
+        template,
+        title
       })
     }
   }
