@@ -13,12 +13,8 @@ const asyncReadDir = promisify(fs.readdir)
 let currentCache
 let didFlush = false
 
-function createMicroServer () {
+function createMicroServer (cert) {
   const isDev = process.env.NODE_ENV === 'dev'
-  let cert
-  if (isDev) {
-    cert = require('openssl-self-signed-certificate')
-  }
   // If we have these, use https
   if (isDev || (process.env.key && process.env.cert)) {
     const https = require('https')
@@ -375,6 +371,7 @@ const server = options => {
   const {
     apiRoutes,
     auth,
+    cert,
     routeMaps,
     cacheClient,
     shouldFlush,
@@ -455,7 +452,7 @@ const server = options => {
       })
     }
   }
-  return createMicroServer()(asyncServer)
+  return createMicroServer(cert)(asyncServer)
 }
 
 module.exports = server
