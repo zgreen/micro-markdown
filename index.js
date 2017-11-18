@@ -38,7 +38,7 @@ function matchWithParams (paths, endpoint) {
   const match = paths.find(path => {
     return path.length && endpointSplits[0] === path.split('/')[0]
   })
-  if (match.indexOf(':') !== -1 && match) {
+  if (match && match.indexOf(':') !== -1) {
     const pathSplits = match.split('/:')
     return pathSplits
       .slice(1)
@@ -71,7 +71,11 @@ function notFound (res) {
 function parseText (text) {
   const { attributes, body } = frontMatter(text)
   const { description, title } = attributes
-  return { body, description, title }
+  return {
+    body,
+    description,
+    title
+  }
 }
 
 /**
@@ -131,6 +135,7 @@ async function establishCache (shouldFlush = true, client) {
       currentCache.flushall(err => {
         if (!err) {
           didFlush = true
+          console.log('Cache flushed.')
         }
       })
     }
@@ -280,7 +285,7 @@ async function readFiles (textsDir) {
   }
 }
 
-async function attemptCacheReadFiles (cache, textsDir) {
+async function attemptCacheReadFiles (cache, textsDir = './texts') {
   const key = 'text-paths'
   let texts = await cache.array.get(key)
   if (!texts || texts.length === 0) {
@@ -310,16 +315,19 @@ async function customHandler (args) {
   try {
     const result = await handler()
     if (result.raw) {
-      string = await result.raw(
-        path,
+      // @TODO This should probably all be bound to the handler.
+      string = await result.raw({
+        url: path,
         params,
-        attemptTextCacheGet.bind(null, cache)
-      )
+        attemptTextCacheGet: attemptTextCacheGet.bind(null, cache),
+        attemptCacheReadFiles: attemptCacheReadFiles.bind(null, cache),
+        frontMatter
+      })
       target = 'raw'
     } else {
       const html = result.html || (string => string)
       const { markdown } = result
-      markedString = html(marked(markdown))
+      markedString = await html(marked(markdown))
       if (typeof markedString !== 'string') {
         console.error(`${markedString} is not a string.`)
         return notFound(res)
