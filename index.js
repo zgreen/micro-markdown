@@ -1,6 +1,5 @@
 const fs = require('fs')
 const { promisify } = require('util')
-
 const frontMatter = require('front-matter')
 const marked = require('marked')
 const micro = require('micro')
@@ -13,20 +12,12 @@ const asyncReadDir = promisify(fs.readdir)
 let currentCache
 let didFlush = false
 
-function createMicroServer (cert) {
-  const isDev = process.env.NODE_ENV === 'dev'
-  // If we have these, use https
-  if (isDev || (process.env.key && process.env.cert)) {
-    const https = require('https')
-    const serverOpts = {
-      key: isDev ? cert.key : process.env.key,
-      cert: isDev ? cert.cert : process.env.cert
-    }
-    return fn => https.createServer(serverOpts, (req, res) => run(req, res, fn))
+function createMicroServer (server) {
+  if (server && typeof server !== 'function') {
+    console.error(`createMicroServer expects a function as its only argument.`)
+    process.exit(1)
   }
-  // else use http
-  const http = require('http')
-  return fn => http.createServer((req, res) => run(req, res, fn))
+  return server.bind(null, run)
 }
 
 function matchWithParams (paths, endpoint) {
@@ -371,7 +362,7 @@ const server = options => {
   const {
     apiRoutes,
     auth,
-    cert,
+    customServer,
     routeMaps,
     cacheClient,
     shouldFlush,
@@ -452,7 +443,10 @@ const server = options => {
       })
     }
   }
-  return createMicroServer(cert)(asyncServer)
+  if (customServer) {
+    return createMicroServer(customServer)(asyncServer)
+  }
+  return micro(asyncServer)
 }
 
 module.exports = server

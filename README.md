@@ -2,18 +2,24 @@
 
 A markdown server.
 
-> ⚠️ Under active development; not stable! ⚠️
+> ⚠️ Under active development; not stable! These docs are incomplete. ⚠️
 
-`micro-markdown` is a markdown server. It serves both markdown files and markdown strings. It's built on top of Zeit's `micro`, and uses a redis cache by default. In the spirit of `micro`, `micro-markdown` tries to be as async as possible.
+`micro-markdown` is a markdown server. It serves both markdown files and
+markdown strings. It's built on top of Zeit's `micro`, and uses a redis cache by
+default. In the spirit of `micro`, `micro-markdown` tries to be as async as
+possible.
 
-`micro-markdown` can be used as an API for rendering and serving markdown, or as a server for a markdown based website.
+`micro-markdown` can be used as an API for rendering and serving markdown, or as
+a server for a markdown based website.
 
 ## Markdown files
 
-To serve a markdown file, add a file to the `./texts` directory (this path is customizable).
+To serve a markdown file, add a file to the `./texts` directory (this path is
+customizable).
 
 ```md
 <!-- ./texts/hello.md -->
+
 # Hello, world.
 
 I am some markdown.
@@ -42,7 +48,7 @@ const server = require('micro-markdown')
  */
 server({
   routes: {
-    'example': {
+    example: {
       handler: () => ({ markdown: '# Hello, example.' })
     }
   }
@@ -53,13 +59,16 @@ server({
 
 By default, `micro-markdown` renders three endpoints for each route:
 
-- `/mm/api/v1/html/:endpoint`: Returns the rendered HTML for `:endpoint`
-- `/mm/api/v1/json/:endpoint`: Returns a JSON object representing the provided markdown for `:endpoint.`
-- `/mm/api/v1/raw/:endpoint`: Returns the raw markdown string for `:endpoint`.
+* `/mm/api/v1/html/:endpoint`: Returns the rendered HTML for `:endpoint`
+* `/mm/api/v1/json/:endpoint`: Returns a JSON object representing the provided
+  markdown for `:endpoint.`
+* `/mm/api/v1/raw/:endpoint`: Returns the raw markdown string for `:endpoint`.
 
 ## Route maps
 
-You can pass route maps to `micro-markdown` to mirror existing endpoints. This is helpful if you want to use `micro-markdown` to serve a markdown-based website.
+You can pass route maps to `micro-markdown` to mirror existing endpoints. This
+is helpful if you want to use `micro-markdown` to serve a markdown-based
+website.
 
 ```js
 // ./server.js
@@ -70,15 +79,16 @@ const server = require('micro-markdown')
  */
 server({
   routes: {
-    'example': {
+    example: {
       handler: () => ({ markdown: '# Hello, example.' })
     }
   },
   routeMaps: {
-    default: route => { // Resolve `/mm/api/v1/html/${foo}` to `/${foo}`
-      return route.indexOf("/mm") === 0
+    default: route => {
+      // Resolve `/mm/api/v1/html/${foo}` to `/${foo}`
+      return route.indexOf('/mm') === 0
         ? {}
-        : { route: `${route}`, target: "html" };
+        : { route: `${route}`, target: 'html' }
     }
   }
 }).listen(3000)
@@ -86,7 +96,8 @@ server({
 
 ## Caching
 
-Rendered markup is cached by default, using redis. To use the redis cache, provide the following environment variables:
+Rendered markup is cached by default, using redis. To use the redis cache,
+provide the following environment variables:
 
 ```
 REDIS_HOST="YOUR_REDIS_HOST" # Default `redis`
@@ -95,7 +106,8 @@ REDIS_PORT="YOUR_REDIS_PASSWORD" # Default `6379`
 REDIS_PASSWORD="YOUR_REDIS_PASSWORD"
 ```
 
-By default, `micro-markdown` will flush the redis cache the first time it is called.
+By default, `micro-markdown` will flush the redis cache the first time it is
+called.
 
 ## Why?
 
@@ -103,5 +115,7 @@ I wanted a simple server that would dynamically render and route markdown.
 
 I tried other options:
 
-- Static site: Renders markdown, but requires a build.
-- SSR with React, Vue etc.: There are great tools for this. I couldn't find a good option that would let my dynamically render flat markdown files to custom routes, though.
+* Static site: Renders markdown, but requires a build.
+* SSR with React, Vue etc.: There are great tools for this. I couldn't find a
+  good option that would let my dynamically render flat markdown files to custom
+  routes, though.
