@@ -24,7 +24,7 @@
     "redis": "^2.8.0"
   },
   "devDependencies": {
-    "axios": "^0.16.2",
+    "axios": "^0.18.1",
     "eslint": "^4.9.0",
     "eslint-config-standard": "^10.2.1",
     "eslint-plugin-import": "^2.7.0",
